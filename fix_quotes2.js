@@ -1,0 +1,1 @@
+﻿const fs=require("fs");let p="C:\\Users\\吴习凡\\Documents\\timer\\kaoyan-app\\src\\screens\\DailyScreen.js";let t=fs.readFileSync(p,"utf-8");t=t.split('"未开始;').join('"未开始";');let i=t.indexOf("鍒哷");if(i>0){t=t.substring(0,i)+"分`;"+t.substring(i+4);}fs.writeFileSync(p,t,"utf-8");console.log("fixed");

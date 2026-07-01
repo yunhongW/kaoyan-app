@@ -1,0 +1,1 @@
+﻿const fs=require("fs");let p="C:\\Users\\吴习凡\\Documents\\timer\\kaoyan-app\\src\\screens\\DailyScreen.js";let t=fs.readFileSync(p,"utf-8");t=t.replace(/"学习中;/g,'"学习中";');t=t.replace(/"已暂停;/g,'"已暂停";');t=t.replace(/"已完成;/g,'"已完成";');fs.writeFileSync(p,t,"utf-8");console.log("done");
