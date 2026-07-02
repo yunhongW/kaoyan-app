@@ -1,0 +1,13 @@
+{"_e":"root:init","_t":1782833983026,"format":"v0-jsonl","version":"56.1.16"}
+{"_e":"env:mode","_t":1782833983027,"nodeEnv":"development","babelEnv":"development","mode":"development"}
+{"_e":"env:load","_t":1782833983029,"mode":"development","files":[],"env":{}}
+{"_e":"devserver:start","_t":1782833983658,"mode":"development","web":true,"baseUrl":"","asyncRoutes":false,"routerRoot":"../..\\..\\app","serverComponents":false,"serverActions":false,"serverRendering":false,"apiRoutes":false,"exporting":false}
+{"_e":"metro:config","_t":1782833984582,"serverRoot":"../..\\..","projectRoot":"../..\\..","exporting":false,"flags":{"autolinkingModuleResolution":false,"serverActions":false,"serverComponents":false,"reactCompiler":false,"optimizeGraph":false,"treeshaking":false,"logbox":false}}
+{"_e":"metro:instantiate","_t":1782833991396,"atlas":false,"workers":17,"host":"::","port":8082}
+{"_e":"root:init","_t":1782834314424,"format":"v0-jsonl","version":"56.1.16"}
+{"_e":"env:mode","_t":1782834314425,"nodeEnv":"development","babelEnv":"development","mode":"development"}
+{"_e":"env:load","_t":1782834314429,"mode":"development","files":[],"env":{}}
+{"_e":"devserver:start","_t":1782834314735,"mode":"development","web":true,"baseUrl":"","asyncRoutes":false,"routerRoot":"../..\\..\\app","serverComponents":false,"serverActions":false,"serverRendering":false,"apiRoutes":false,"exporting":false}
+{"_e":"metro:config","_t":1782834315131,"serverRoot":"../..\\..","projectRoot":"../..\\..","exporting":false,"flags":{"autolinkingModuleResolution":false,"serverActions":false,"serverComponents":false,"reactCompiler":false,"optimizeGraph":false,"treeshaking":false,"logbox":false}}
+{"_e":"metro:instantiate","_t":1782834319725,"atlas":false,"workers":17,"host":"::","port":8083}
+{"_e":"metro:server_log","_t":1782835820078,"level":"warn","data":["Failed to download the latest version of React Native DevTools. Using a fallback version instead. Connect to the internet or check your network settings."]}

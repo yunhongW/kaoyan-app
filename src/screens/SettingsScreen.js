@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
   TextInput, Alert,
@@ -151,6 +151,28 @@ export default function SettingsScreen({ refreshAll }) {
         )}
       </View>
 
+
+      {/* 每日学习目标 */}
+      <View style={[styles.card, shadows.md]}>
+        <Text style={styles.cardTitle}>每日学习目标</Text>
+        <Text style={{ ...typography.caption, color: colors.textSecondary, marginBottom: 8 }}>
+          设置每天的总学习时长目标，首页会显示完成进度
+        </Text>
+        <View style={{ flexDirection: "row", gap: 8, alignItems: "center" }}>
+          <TextInput
+            style={{ flex: 1, borderWidth: 1, borderColor: colors.border, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, fontSize: 15, backgroundColor: colors.bg }}
+            placeholder="例如：480（即8小时）"
+            keyboardType="number-pad"
+            returnKeyType="done"
+            onSubmitEditing={async (e) => {
+              const val = parseInt(e.nativeEvent.text) || 0;
+              await store.updateSettings({ dailyTarget: val });
+              Alert.alert("已设置", "每日学习目标已更新为 " + val + " 分钟");
+            }}
+          />
+          <Text style={{ ...typography.body, color: colors.textSecondary }}>分钟/天</Text>
+        </View>
+      </View>
       {/* 数据管理 */}
       <View style={[styles.card, shadows.md]}>
         <Text style={styles.cardTitle}>数据管理</Text>

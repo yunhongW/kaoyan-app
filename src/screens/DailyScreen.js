@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
   TextInput, Alert, Modal, FlatList, Animated, Platform, Vibration,
@@ -8,7 +8,7 @@ import * as store from "../store";
 import { fmtDate, formatTimer } from "../utils";
 import { colors, spacing, borderRadius, shadows, typography } from "../theme";
 
-// ===== 计时器Hook =====
+// ===== 计时器 Hook =====
 function useTimer() {
   const timers = useRef({});
   const activeRef = useRef(null);
@@ -91,8 +91,7 @@ function useTimer() {
 
   return { start, pause, resume, stop, secs, state, active: activeRef.current };
 }
-
-// ===== 动画进度条=====
+// ===== AnimatedBar =====
 function AnimatedBar({ pct, height = 6, color = colors.primary }) {
   const anim = useRef(new Animated.Value(0)).current;
   useEffect(() => {
@@ -125,7 +124,7 @@ const barStyles = StyleSheet.create({
   fill: { position: "absolute", left: 0, top: 0 },
 });
 
-// ===== 脉冲点=====
+// ===== PulseDot =====
 function PulseDot({ color = colors.accent, size = 8 }) {
   const pulse = useRef(new Animated.Value(1)).current;
   useEffect(() => {
@@ -147,7 +146,7 @@ function PulseDot({ color = colors.accent, size = 8 }) {
   );
 }
 
-// ===== 数据 Hook =====
+// ===== useDailyData =====
 function useDailyData(dateStr) {
   const [dayData, setDayData] = useState({});
   const [subjects, setSubjects] = useState([]);
@@ -168,7 +167,65 @@ function useDailyData(dateStr) {
   return { dayData, subjects, summary, refresh };
 }
 
-// ===== 主屏幕=====
+// ===== NoteModal =====
+function NoteModal({ visible, subject, onConfirm, onCancel }) {
+  const [noteText, setNoteText] = useState("");
+  const examples = ["背了肖四", "做了2019真题", "复习了高数", "背了单词", "看了网课"];
+
+  useEffect(() => {
+    if (visible) setNoteText("");
+  }, [visible]);
+
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onCancel}>
+      <View style={styles.modalOverlay}>
+        <View style={[styles.modal, shadows.lg]}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>学习备注</Text>
+            <TouchableOpacity onPress={onCancel}>
+              <Ionicons name="close" size={22} color={colors.textSecondary} />
+            </TouchableOpacity>
+          </View>
+          <View style={{ padding: spacing.xl }}>
+            <Text style={{ ...typography.body, color: colors.textSecondary, marginBottom: spacing.md }}>
+              {subject} — 记录一下学了什么
+            </Text>
+            <TextInput
+              style={styles.customInput}
+              placeholder="例如：背了肖四第三章"
+              value={noteText}
+              onChangeText={setNoteText}
+              autoFocus
+              maxLength={100}
+              returnKeyType="done"
+            />
+            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm, marginBottom: spacing.lg }}>
+              {examples.map((ex) => (
+                <TouchableOpacity
+                  key={ex}
+                  style={styles.noteExample}
+                  onPress={() => setNoteText(ex)}
+                >
+                  <Text style={styles.noteExampleText}>{ex}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            <View style={styles.customBtns}>
+              <TouchableOpacity style={styles.cancelBtn} onPress={onCancel}>
+                <Text style={styles.cancelBtnText}>跳过</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.confirmBtn} onPress={() => onConfirm(noteText.trim())}>
+                <Text style={styles.confirmBtnText}>确定</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+    );
+  );
+}
+
+// ===== DailyScreen =====
 export default function DailyScreen({ date, onDateChange }) {
   const dateStr = fmtDate(date);
   const { dayData, subjects, summary, refresh } = useDailyData(dateStr);
@@ -176,28 +233,33 @@ export default function DailyScreen({ date, onDateChange }) {
   const [modalVisible, setModalVisible] = useState(false);
   const [showCustomInput, setShowCustomInput] = useState(false);
   const [customName, setCustomName] = useState("");
-  // 考研专属功能
+
   const [examDaysLeft, setExamDaysLeft] = useState(null);
+  const [dailyTarget, setDailyTarget] = useState(0);
+
+  // Pomodoro
   const [pomodoroMode, setPomodoroMode] = useState(false);
-  const [pomoRemaining, setPomoRemaining] = useState(25 * 60); // seconds
-const [pomoState, setPomoState] = useState("idle"); // idle | focus | break ? const [sessionNote, setSessionNote] = useState("");
-  const [showNoteInput, setShowNoteInput] = useState(false);
-  const [activeSubject, setActiveSubject] = useState(null);
+  const [pomoRemaining, setPomoRemaining] = useState(25 * 60);
+  const [pomoState, setPomoState] = useState("idle");
   const pomoLen = 25 * 60;
   const breakLen = 5 * 60;
   const pomoInterval = useRef(null);
 
+  const [noteModalVisible, setNoteModalVisible] = useState(false);
+  const [pendingSubject, setPendingSubject] = useState(null);
+  const [pendingMinutes, setPendingMinutes] = useState(0);
 
   useEffect(() => { refresh(); }, [date]);
-  // Load countdown
+
   useEffect(() => {
     (async () => {
       const days = await store.getDaysUntilExam();
       setExamDaysLeft(days);
+      const s = await store.getSettings();
+      if (s.dailyTarget) setDailyTarget(s.dailyTarget);
     })();
   }, []);
 
-  // Timer cross-date protection
   const dateRef = useRef(date);
   useEffect(() => {
     if (dateRef.current && dateRef.current.getTime() !== date.getTime()) {
@@ -217,13 +279,36 @@ const [pomoState, setPomoState] = useState("idle"); // idle | focus | break ? co
   const handleStart = (s) => { Vibration.vibrate(10); timer.start(s); };
   const handlePause = (s) => { Vibration.vibrate(5); timer.pause(s); };
   const handleResume = (s) => timer.resume(s);
+
   const handleStop = async (s) => {
     const el = timer.stop(s);
-    if (el > 0) { await store.addSession(dateStr, s, Math.round(el)); refresh(); }
+    if (el > 0) {
+      setPendingSubject(s);
+      setPendingMinutes(Math.round(el));
+      setNoteModalVisible(true);
+    }
   };
 
+  const handleNoteConfirm = async (note) => {
+    if (note) {
+      await store.addSessionWithNote(dateStr, pendingSubject, pendingMinutes, note);
+    } else {
+      await store.addSession(dateStr, pendingSubject, pendingMinutes);
+    }
+    setNoteModalVisible(false);
+    setPendingSubject(null);
+    setPendingMinutes(0);
+    refresh();
+  };
 
-  // 番茄钟逻辑
+  const handleNoteCancel = async () => {
+    await store.addSession(dateStr, pendingSubject, pendingMinutes);
+    setNoteModalVisible(false);
+    setPendingSubject(null);
+    setPendingMinutes(0);
+    refresh();
+  };
+
   const startPomodoro = () => {
     setPomoState("focus");
     setPomoRemaining(pomoLen);
@@ -233,7 +318,6 @@ const [pomoState, setPomoState] = useState("idle"); // idle | focus | break ? co
         if (prev <= 1) {
           clearInterval(pomoInterval.current);
           Vibration.vibrate([0, 500, 200, 500]);
-          // 专注结束，进入休息
           setPomoState("break");
           setPomoRemaining(breakLen);
           pomoInterval.current = setInterval(() => {
@@ -261,32 +345,15 @@ const [pomoState, setPomoState] = useState("idle"); // idle | focus | break ? co
     setPomoRemaining(pomoLen);
   };
 
-  // 带备注的结束
-  const handleStopWithNote = async (s) => {
-    const el = timer.stop(s);
-    if (el > 0) {
-      if (sessionNote.trim()) {
-        await store.addSessionWithNote(dateStr, s, Math.round(el), sessionNote.trim());
-      } else {
-        await store.addSession(dateStr, s, Math.round(el));
-      }
-      setSessionNote("");
-      setShowNoteInput(false);
-      refresh();
-    }
-  };
-
-  // 番茄模式下的开始：同时启动计时器和番茄钟
   const handlePomoStart = (s) => {
     Vibration.vibrate(10);
     timer.start(s);
-    setActiveSubject(s);
     startPomodoro();
   };
 
   const handlePomoStop = async (s) => {
     stopPomodoro();
-    await handleStopWithNote(s);
+    await handleStop(s);
   };
 
   const handleAddCustom = async () => {
@@ -305,15 +372,29 @@ const [pomoState, setPomoState] = useState("idle"); // idle | focus | break ? co
     ...Object.keys(dayData).filter((s) => !subjects.includes(s)),
   ];
 
+  const examWeeksLeft = examDaysLeft !== null && examDaysLeft > 0
+    ? Math.floor(examDaysLeft / 7) + "周" + (examDaysLeft % 7) + "天"
+    : "";
+
   return (
     <View style={styles.container}>
-      {/* 顶栏 + 日期 */}
+      {/* Header */}
       <View style={styles.header}>
         <View style={styles.headerRow}>
-          <View style={styles.titleRow}><Text style={styles.appTitle}>📚 考研学习</Text>{examDaysLeft !== null && examDaysLeft > 0 && <Text style={styles.countdown}>⏱ 倒计时 {examDaysLeft} 天</Text>}</View>
+          <View style={styles.titleRow}>
+            <Text style={styles.appTitle}>考研学习</Text>
+            {examDaysLeft !== null && examDaysLeft > 0 && (
+              <Text style={styles.countdown}>
+                倒计时 {examDaysLeft} 天
+              </Text>
+            )}
+          </View>
           <View style={styles.headerRight}>
-            <TouchableOpacity style={[styles.pomoToggle, pomodoroMode && styles.pomoToggleActive]} onPress={() => { setPomodoroMode(!pomodoroMode); stopPomodoro(); }}><Text style={[styles.pomoToggleText, pomodoroMode && {color: "#fff"}]}>🍅</Text></TouchableOpacity><TouchableOpacity style={styles.iconBtn}>
-              <Ionicons name="ellipsis-horizontal" size={20} color={colors.textSecondary} />
+            <TouchableOpacity
+              style={[styles.pomoToggle, pomodoroMode && styles.pomoToggleActive]}
+              onPress={() => { setPomodoroMode(!pomodoroMode); stopPomodoro(); }}
+            >
+              <Text style={[styles.pomoToggleText, pomodoroMode && {color: "#fff"}]}>番茄</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -335,10 +416,15 @@ const [pomoState, setPomoState] = useState("idle"); // idle | focus | break ? co
             <Ionicons name="chevron-forward" size={20} color={colors.text} />
           </TouchableOpacity>
         </View>
+        {examWeeksLeft && (
+          <Text style={styles.examDetail}>
+            还剩 {examWeeksLeft} ({Math.round((365 - examDaysLeft) / 365 * 100)}% 已用)
+          </Text>
+        )}
       </View>
 
       <ScrollView style={styles.scrollArea} showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-        {/* 进度卡片 */}
+        {/* Summary card */}
         <View style={[styles.summaryCard, shadows.md]}>
           <View style={styles.summaryTop}>
             <Text style={styles.summaryLabel}>今日总进度</Text>
@@ -367,9 +453,36 @@ const [pomoState, setPomoState] = useState("idle"); // idle | focus | break ? co
               <Text style={styles.statLabel}>已完成</Text>
             </View>
           </View>
+          {dailyTarget > 0 && (
+            <View style={styles.dailyTargetRow}>
+              <Text style={styles.dailyTargetLabel}>今日目标 {dailyTarget} 分钟</Text>
+              <View style={styles.dailyTargetBarBg}>
+                <View style={[styles.dailyTargetBar, {
+                  width: Math.min(100, (summary.actual / dailyTarget) * 100) + "%",
+                  backgroundColor: summary.actual >= dailyTarget ? colors.accent : colors.primary,
+                }]} />
+              </View>
+              <Text style={styles.dailyTargetPct}>
+                {Math.min(100, Math.round(summary.actual / dailyTarget * 100))}%
+              </Text>
+            </View>
+          )}
         </View>
+        {/* Pomo banner */}
+        {pomodoroMode && pomoState !== "idle" && (
+          <View style={[styles.pomoBanner, {
+            backgroundColor: pomoState === "focus" ? colors.accentLight : colors.primaryBg,
+          }]}>
+            <Text style={styles.pomoBannerIcon}>
+              {pomoState === "focus" ? "专注中" : "休息中"}
+            </Text>
+            <Text style={styles.pomoBannerTime}>
+              {Math.floor(pomoRemaining / 60)}:{String(pomoRemaining % 60).padStart(2, "0")}
+            </Text>
+          </View>
+        )}
 
-        {/* 科目列表 */}
+        {/* Subject list */}
         {allSubjects.length === 0 ? (
           <View style={styles.emptyState}>
             <Ionicons name="book-outline" size={48} color={colors.textTertiary} />
@@ -389,31 +502,26 @@ const [pomoState, setPomoState] = useState("idle"); // idle | focus | break ? co
             const sec = timer.secs(subj);
             const isMaster = subjects.includes(subj);
 
+            const lastNote = rec.sessions && rec.sessions.length > 0
+              ? rec.sessions[rec.sessions.length - 1].note
+              : null;
+
             let stText, stBg, stCol;
             if (isRun) { stText = "学习中"; stBg = colors.accentLight; stCol = colors.accentDark; }
             else if (isPs) { stText = "已暂停"; stBg = colors.warningBg; stCol = colors.warning; }
             else if (done) { stText = "已完成"; stBg = colors.successBg; stCol = colors.success; }
-            else if (act > 0) { stText = `已学 ${act}分`;stBg = colors.tagBg; stCol = colors.tagText; }
+            else if (act > 0) { stText = "已学 " + act + "分"; stBg = colors.tagBg; stCol = colors.tagText; }
             else { stText = "未开始"; stBg = colors.tagBg; stCol = colors.tagText; }
 
-            const isTiming = isRun || isPs;
-
             return (
-              <View key={subj}
-                style={[
-                  styles.subjectCard,
-                  shadows.sm,
-                  isRun && styles.cardActive,
-                  done && styles.cardDone,
-                ]}
-              >
-                {/* 头部 */}
+              <View key={subj} style={[styles.subjCard, shadows.sm, done && styles.cardDone]}>
+                {/* Header */}
                 <View style={styles.subjHeader}>
                   <View style={styles.subjNameWrap}>
                     {isRun && <PulseDot color={colors.accent} size={8} />}
                     {!isMaster && (
                       <View style={styles.customTag}>
-                        <Text style={styles.customTagText}>馃搶</Text>
+                        <Text style={styles.customTagText}>自定义</Text>
                       </View>
                     )}
                     <Text style={[styles.subjName, isRun && { color: colors.accentDark }]}>
@@ -425,7 +533,7 @@ const [pomoState, setPomoState] = useState("idle"); // idle | focus | break ? co
                   </View>
                 </View>
 
-                {/* 进度条*/}
+                {/* Progress bar */}
                 <View style={styles.progressRow}>
                   <AnimatedBar pct={pct} height={5} color={pct >= 100 ? colors.accent : colors.primary} />
                   <Text style={[styles.progressNum, { color: pct >= 100 ? colors.accent : colors.text }]}>
@@ -433,9 +541,16 @@ const [pomoState, setPomoState] = useState("idle"); // idle | focus | break ? co
                   </Text>
                 </View>
 
-                {/* 操作区*/}
+                {/* Recent note */}
+                {lastNote && !isRun && !isPs && (
+                  <View style={styles.noteRow}>
+                    <Ionicons name="chatbubble-ellipses-outline" size={12} color={colors.textTertiary} />
+                    <Text style={styles.noteText}>{lastNote}</Text>
+                  </View>
+                )}
+
+                {/* Actions */}
                 <View style={styles.actions}>
-                  {/* 计划输入 */}
                   <View style={styles.planBox}>
                     <Text style={styles.planLabel}>计划</Text>
                     <TextInput style={styles.planInput}
@@ -447,10 +562,9 @@ const [pomoState, setPomoState] = useState("idle"); // idle | focus | break ? co
                         refresh();
                       }}
                     />
-                    <Text style={styles.planLabel}>鍒</Text>
+                    <Text style={styles.planLabel}>分</Text>
                   </View>
 
-                  {/* 计时按钮 */}
                   <View style={styles.timerBox}>
                     {isRun ? (
                       <>
@@ -489,26 +603,25 @@ const [pomoState, setPomoState] = useState("idle"); // idle | focus | break ? co
                   </TouchableOpacity>
                 </View>
 
-                {/* 学习中底部提示*/}
+                {/* Running hint */}
                 {isRun && (
                   <View style={styles.timerHint}>
                     {pomodoroMode && pomoState !== "idle" && (
                       <Text style={styles.pomoInfoText}>
-                        {pomoState === "focus" ? "🍅 专注中" : "☕ 休息中"} {Math.floor(pomoRemaining / 60)}:{String(pomoRemaining % 60).padStart(2, "0")} | 
+                        {pomoState === "focus" ? "专注中" : "休息中"} {Math.floor(pomoRemaining / 60)}:{String(pomoRemaining % 60).padStart(2, "0")} |
                       </Text>
                     )}
                     <PulseDot color={colors.accent} size={6} />
-                    <Text style={styles.timerHintText}> 计时中 · </Text>
+                    <Text style={styles.timerHintText}> 计时中 ... </Text>
                     <Text style={styles.timerHintTime}>{formatTimer(sec)}</Text>
                   </View>
                 )}
-                  </View>
+              </View>
             );
           })
-        )
-        }
+        )}
 
-        {/* 添加按钮 */}
+        {/* Add button */}
         <TouchableOpacity style={styles.addBtn}
           onPress={() => { setShowCustomInput(false); setModalVisible(true); }}
         >
@@ -519,12 +632,14 @@ const [pomoState, setPomoState] = useState("idle"); // idle | focus | break ? co
         <View style={{ height: 40 }} />
       </ScrollView>
 
-      {/* 添加弹窗 */}
+      {/* Add modal */}
       <Modal visible={modalVisible} transparent animationType="slide" onRequestClose={() => setModalVisible(false)}>
         <View style={styles.modalOverlay}>
           <View style={[styles.modal, shadows.lg]}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>{showCustomInput ? "自定义科目" : "选择要学习的科目"}</Text>
+              <Text style={styles.modalTitle}>
+                {showCustomInput ? "自定义科目" : "选择要学习的科目"}
+              </Text>
               <TouchableOpacity onPress={() => { setModalVisible(false); setShowCustomInput(false); setCustomName(""); }}>
                 <Ionicons name="close" size={22} color={colors.textSecondary} />
               </TouchableOpacity>
@@ -534,7 +649,7 @@ const [pomoState, setPomoState] = useState("idle"); // idle | focus | break ? co
               <View style={styles.customArea}>
                 <TextInput style={styles.customInput}
                   placeholder="输入科目名称"
-                   value={customName}
+                  value={customName}
                   onChangeText={setCustomName}
                   autoFocus
                   maxLength={20}
@@ -553,7 +668,7 @@ const [pomoState, setPomoState] = useState("idle"); // idle | focus | break ? co
             ) : (
               <>
                 <FlatList
-                   data={subjects.filter((s) => !dayData[s] || (!dayData[s].planned && (!dayData[s].sessions || dayData[s].sessions.length === 0)))}
+                  data={subjects.filter((s) => !dayData[s] || (!dayData[s].planned && (!dayData[s].sessions || dayData[s].sessions.length === 0)))}
                   keyExtractor={(item) => item}
                   contentContainerStyle={styles.modalList}
                   renderItem={({ item }) => (
@@ -567,18 +682,26 @@ const [pomoState, setPomoState] = useState("idle"); // idle | focus | break ? co
                     </TouchableOpacity>
                   )}
                   ListEmptyComponent={
-                    <Text style={styles.modalEmpty}>今天所有科目都已添加 ✨</Text>
+                    <Text style={styles.modalEmpty}>今天所有科目都已添加</Text>
                   }
                 />
                 <TouchableOpacity style={styles.modalCustomBtn} onPress={() => setShowCustomInput(true)}>
                   <Ionicons name="add-circle-outline" size={18} color={colors.primary} />
-                  <Text style={styles.modalCustomText}>鍒涘缓自定义科目</Text>
+                  <Text style={styles.modalCustomText}>创建自定义科目</Text>
                 </TouchableOpacity>
               </>
             )}
           </View>
         </View>
       </Modal>
+
+      {/* Note modal */}
+      <NoteModal
+        visible={noteModalVisible}
+        subject={pendingSubject}
+        onConfirm={handleNoteConfirm}
+        onCancel={handleNoteCancel}
+      />
     </View>
   );
 }
@@ -586,7 +709,6 @@ const [pomoState, setPomoState] = useState("idle"); // idle | focus | break ? co
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
 
-  // Header
   header: {
     backgroundColor: colors.card,
     paddingTop: Platform.OS === "ios" ? 50 : 12,
@@ -599,19 +721,17 @@ const styles = StyleSheet.create({
   headerRight: { flexDirection: "row", gap: spacing.sm },
   iconBtn: { padding: spacing.xs },
 
-  // Date nav
   dateNav: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   dateArrow: { width: 36, height: 36, borderRadius: 18, alignItems: "center", justifyContent: "center", backgroundColor: colors.bg },
   dateCenter: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
   dateText: { ...typography.bodyBold, color: colors.text },
   goTodayBadge: { paddingHorizontal: spacing.sm, paddingVertical: 2, borderRadius: 10, backgroundColor: colors.primaryBg },
   goTodayText: { ...typography.tiny, color: colors.primary, fontWeight: "600" },
+  examDetail: { ...typography.tiny, color: colors.textTertiary, textAlign: "center", marginTop: spacing.xs },
 
-  // Scroll area
   scrollArea: { flex: 1 },
   scrollContent: { padding: spacing.lg, paddingBottom: 40 },
 
-  // Summary card
   summaryCard: {
     backgroundColor: colors.card, borderRadius: borderRadius.lg,
     padding: spacing.lg, marginBottom: spacing.lg,
@@ -624,45 +744,52 @@ const styles = StyleSheet.create({
   summaryStats: { flexDirection: "row", marginTop: spacing.md },
   statItem: { flex: 1, alignItems: "center" },
   statNum: { ...typography.h2, color: colors.text },
-  statLabel: { ...typography.tiny, color: colors.textSecondary, marginTop: 3 },
+  statLabel: { ...typography.tiny, color: colors.textSecondary, marginTop: 2 },
   statDivider: { width: 1, backgroundColor: colors.borderLight, marginVertical: spacing.xs },
 
-  // Empty state
-  emptyState: { alignItems: "center", paddingVertical: 60 },
-  emptyTitle: { ...typography.body, color: colors.textSecondary, marginTop: spacing.md },
-  emptyDesc: { ...typography.caption, color: colors.textTertiary, marginTop: spacing.xs },
+  dailyTargetRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm, marginTop: spacing.md, paddingTop: spacing.md, borderTopWidth: 1, borderTopColor: colors.borderLight },
+  dailyTargetLabel: { ...typography.tiny, color: colors.textSecondary, minWidth: 100 },
+  dailyTargetBarBg: { flex: 1, height: 6, backgroundColor: colors.barBg, borderRadius: 3, overflow: "hidden" },
+  dailyTargetBar: { height: "100%", borderRadius: 3 },
+  dailyTargetPct: { ...typography.small, fontWeight: "600", color: colors.primary, minWidth: 36, textAlign: "right" },
 
-  // Subject card
-  subjectCard: {
+  pomoBanner: {
+    flexDirection: "row", alignItems: "center", justifyContent: "center", gap: spacing.md,
+    paddingVertical: spacing.md, borderRadius: borderRadius.md, marginBottom: spacing.lg,
+  },
+  pomoBannerIcon: { ...typography.bodyBold, color: colors.text },
+  pomoBannerTime: { ...typography.h3, color: colors.accentDark, fontWeight: "700" },
+
+  subjCard: {
     backgroundColor: colors.card, borderRadius: borderRadius.lg,
     padding: spacing.lg, marginBottom: spacing.md,
     borderWidth: 1, borderColor: colors.borderLight,
   },
-  cardActive: { borderColor: colors.accent, backgroundColor: "#fffdf7" },
-  cardDone: { borderColor: colors.success, backgroundColor: "#f8fbf8" },
+  cardDone: { borderColor: colors.successBg, backgroundColor: "#fafffa" },
   subjHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: spacing.md },
   subjNameWrap: { flexDirection: "row", alignItems: "center", gap: spacing.sm, flex: 1 },
-  subjName: { ...typography.body, fontWeight: "600", color: colors.text, flexShrink: 1 },
-  customTag: { backgroundColor: colors.bg, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 },
-  customTagText: { fontSize: 10 },
-  statusBadge: { paddingHorizontal: spacing.sm, paddingVertical: 3, borderRadius: 8 },
-  statusText: { ...typography.tiny, fontWeight: "700" },
+  subjName: { ...typography.h3, color: colors.text },
+  customTag: { backgroundColor: colors.accentLight, borderRadius: 4, paddingHorizontal: 4, paddingVertical: 1 },
+  customTagText: { fontSize: 9, color: colors.accentDark, fontWeight: "600" },
+  statusBadge: { borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3 },
+  statusText: { fontSize: 11, fontWeight: "600" },
 
-  // Progress
   progressRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm, marginBottom: spacing.md },
   progressNum: { ...typography.small, fontWeight: "600", minWidth: 60, textAlign: "right" },
 
-  // Actions area
-  actions: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: spacing.sm },
-  planBox: { flexDirection: "row", alignItems: "center", gap: spacing.xs, backgroundColor: colors.bg, borderRadius: borderRadius.md, paddingHorizontal: spacing.md, paddingVertical: spacing.xs },
-  planLabel: { ...typography.tiny, color: colors.textSecondary, fontWeight: "500" },
-  planInput: { ...typography.body, fontWeight: "600", color: colors.text, minWidth: 28, padding: 0, textAlign: "center" },
+  noteRow: { flexDirection: "row", alignItems: "center", gap: 4, marginBottom: spacing.sm, paddingLeft: 2 },
+  noteText: { fontSize: 11, color: colors.textTertiary, fontStyle: "italic" },
 
-  timerBox: { flexDirection: "row", alignItems: "center", gap: spacing.xs },
+  actions: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
+  planBox: { flexDirection: "row", alignItems: "center", gap: 3, backgroundColor: colors.bg, borderRadius: borderRadius.sm, paddingHorizontal: spacing.sm, paddingVertical: 2 },
+  planLabel: { ...typography.tiny, color: colors.textSecondary },
+  planInput: { width: 32, height: 24, textAlign: "center", ...typography.small, color: colors.text, fontWeight: "600", padding: 0 },
+
+  timerBox: { flex: 1, flexDirection: "row", alignItems: "center", gap: spacing.xs, justifyContent: "flex-end" },
 
   btnStart: {
-    flexDirection: "row", alignItems: "center", gap: 4,
-    backgroundColor: colors.primary, paddingHorizontal: spacing.lg, paddingVertical: spacing.sm,
+    flexDirection: "row", alignItems: "center", gap: 3,
+    backgroundColor: colors.primary, paddingHorizontal: spacing.md, paddingVertical: spacing.sm,
     borderRadius: borderRadius.md,
   },
   btnStartText: { ...typography.small, color: colors.textInverse, fontWeight: "600" },
@@ -685,7 +812,6 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: colors.dangerBg, paddingHorizontal: spacing.sm, paddingVertical: spacing.sm,
     borderRadius: borderRadius.md,
   },
-  timerText: { ...typography.bodyBold, color: colors.accent, minWidth: 50, textAlign: "center" },
   timerText: { ...typography.bodyBold, color: colors.accent, minWidth: 50, textAlign: "center", ...Platform.select({ default: {} }) },
   pomoInfo: { flexDirection: "row", alignItems: "center", backgroundColor: colors.accentLight, borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3, marginBottom: 4 },
   pomoInfoText: { fontSize: 11, fontWeight: "600", color: colors.accentDark },
@@ -693,7 +819,7 @@ const styles = StyleSheet.create({
   countdown: { fontSize: 11, fontWeight: "700", color: colors.accent, backgroundColor: colors.accentLight, paddingHorizontal: 8, paddingVertical: 2, borderRadius: 8 },
   pomoToggle: { width: 30, height: 30, borderRadius: 15, backgroundColor: colors.bg, alignItems: "center", justifyContent: "center" },
   pomoToggleActive: { backgroundColor: colors.accent },
-  pomoToggleText: { fontSize: 15 },
+  pomoToggleText: { fontSize: 10, fontWeight: "700", color: colors.textSecondary },
 
   removeBtn: { padding: spacing.sm, marginLeft: spacing.xs },
 
@@ -705,7 +831,6 @@ const styles = StyleSheet.create({
   timerHintText: { ...typography.tiny, color: colors.accent },
   timerHintTime: { ...typography.small, fontWeight: "700", color: colors.accent },
 
-  // Add button
   addBtn: {
     flexDirection: "row", alignItems: "center", justifyContent: "center", gap: spacing.sm,
     borderWidth: 2, borderColor: colors.border, borderStyle: "dashed",
@@ -714,11 +839,7 @@ const styles = StyleSheet.create({
   },
   addBtnText: { ...typography.body, color: colors.primary, fontWeight: "600" },
 
-  // Modal
-  modalOverlay: {
-    flex: 1, backgroundColor: "rgba(0,0,0,0.4)",
-    justifyContent: "flex-end",
-  },
+  modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.4)", justifyContent: "flex-end" },
   modal: {
     backgroundColor: colors.card, borderTopLeftRadius: borderRadius.xl, borderTopRightRadius: borderRadius.xl,
     maxHeight: "70%", paddingBottom: 30,
@@ -736,10 +857,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1, borderBottomColor: colors.borderLight,
   },
   modalItemName: { ...typography.body, color: colors.text, fontWeight: "500" },
-  modalAddIcon: {
-    width: 28, height: 28, borderRadius: 14,
-    backgroundColor: colors.primaryBg, alignItems: "center", justifyContent: "center",
-  },
+  modalAddIcon: { width: 28, height: 28, borderRadius: 14, backgroundColor: colors.primaryBg, alignItems: "center", justifyContent: "center" },
   modalEmpty: { textAlign: "center", ...typography.caption, padding: spacing.xxl },
   modalCustomBtn: {
     flexDirection: "row", alignItems: "center", justifyContent: "center", gap: spacing.sm,
@@ -747,7 +865,6 @@ const styles = StyleSheet.create({
   },
   modalCustomText: { ...typography.body, color: colors.primary, fontWeight: "600" },
 
-  // Custom input
   customArea: { padding: spacing.xl },
   customInput: {
     borderWidth: 1, borderColor: colors.border, borderRadius: borderRadius.md,
@@ -755,14 +872,15 @@ const styles = StyleSheet.create({
     ...typography.body, marginBottom: spacing.lg,
   },
   customBtns: { flexDirection: "row", gap: spacing.md, justifyContent: "flex-end" },
-  cancelBtn: {
-    borderWidth: 1, borderColor: colors.border, borderRadius: borderRadius.md,
-    paddingHorizontal: spacing.xl, paddingVertical: spacing.md,
-  },
+  cancelBtn: { borderWidth: 1, borderColor: colors.border, borderRadius: borderRadius.md, paddingHorizontal: spacing.xl, paddingVertical: spacing.md },
   cancelBtnText: { ...typography.body, color: colors.textSecondary },
-  confirmBtn: {
-    backgroundColor: colors.primary, borderRadius: borderRadius.md,
-    paddingHorizontal: spacing.xl, paddingVertical: spacing.md,
-  },
+  confirmBtn: { backgroundColor: colors.primary, borderRadius: borderRadius.md, paddingHorizontal: spacing.xl, paddingVertical: spacing.md },
   confirmBtnText: { ...typography.bodyBold, color: colors.textInverse },
+
+  noteExample: { backgroundColor: colors.accentLight, borderRadius: borderRadius.sm, paddingHorizontal: spacing.sm, paddingVertical: spacing.xs },
+  noteExampleText: { fontSize: 12, color: colors.accentDark },
+
+  emptyState: { alignItems: "center", paddingVertical: spacing.xxl * 2 },
+  emptyTitle: { ...typography.h3, color: colors.textSecondary, marginTop: spacing.md },
+  emptyDesc: { ...typography.caption, color: colors.textTertiary, marginTop: spacing.xs },
 });
