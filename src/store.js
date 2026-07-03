@@ -1,4 +1,4 @@
-﻿import AsyncStorage from "@react-native-async-storage/async-storage";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const KEY = "kaoyan_data";
 const DEFAULT_SUBJECTS = ["政治", "英语", "数学", "专业课"];
@@ -299,6 +299,170 @@ export async function updateSettings(s) {
   await save();
 }
 
+
+// ---- 学习提醒通知 ----
+export async function setNotificationTime(hour, minute) {
+  await load();
+  cache.notificationTime = { hour, minute };
+  await save();
+}
+
+export async function getNotificationTime() {
+  await load();
+  return cache.notificationTime || { hour: 8, minute: 0 };
+}
+
+// ---- 科目权重/建议时间 ----
+export async function setSubjectWeight(name, weight) {
+  await load();
+  if (!cache.subjectWeights) cache.subjectWeights = {};
+  cache.subjectWeights[name] = Math.max(1, Math.min(5, weight || 3));
+  await save();
+}
+
+export async function getSubjectWeights() {
+  await load();
+  return cache.subjectWeights || {};
+}
+
+export async function getSuggestedMinutes(subject, totalDailyMinutes) {
+  await load();
+  const weights = cache.subjectWeights || {};
+  const totalWeight = Object.values(weights).reduce((s, w) => s + w, 0) || 1;
+  const w = weights[subject] || 3;
+  return Math.round((w / totalWeight) * totalDailyMinutes);
+}
+
+// ---- 真题/模拟卷记录 ----
+export async function addExamPaper(paper) {
+  await load();
+  if (!cache.examPapers) cache.examPapers = [];
+  cache.examPapers.push({
+    id: Date.now().toString(),
+    subject: paper.subject,
+    year: paper.year,
+    score: paper.score,
+    totalScore: paper.totalScore || 100,
+    duration: paper.duration || 0,
+    date: paper.date || fmtDate(new Date()),
+    notes: paper.notes || "",
+  });
+  await save();
+  return cache.examPapers.length;
+}
+
+export async function getExamPapers() {
+  await load();
+  return cache.examPapers || [];
+}
+
+export async function deleteExamPaper(id) {
+  await load();
+  if (cache.examPapers) {
+    cache.examPapers = cache.examPapers.filter((p) => p.id !== id);
+    await save();
+  }
+}
+
+// ---- 心情打卡 ----
+export async function setMood(dateStr, mood, note) {
+  await load();
+  if (!cache.moods) cache.moods = {};
+  cache.moods[dateStr] = { mood: mood || "okay", note: note || "", date: dateStr };
+  await save();
+}
+
+export async function getMood(dateStr) {
+  await load();
+  if (!cache.moods) return null;
+  return cache.moods[dateStr] || null;
+}
+
+export async function getAllMoods() {
+  await load();
+  return cache.moods || {};
+}
+
+// ---- 每天总结 ----
+export async function getDailySummary(dateStr) {
+  await load();
+  const day = cache.records[dateStr];
+  if (!day) return null;
+  let totalMinutes = 0;
+  const subjects = [];
+  let pomoCount = 0;
+  let notes = [];
+  Object.keys(day).forEach((s) => {
+    if (day[s].sessions) {
+      const subjTotal = day[s].sessions.reduce((sum, x) => sum + (x.duration || 0), 0);
+      if (subjTotal > 0) {
+        totalMinutes += subjTotal;
+        subjects.push({ name: s, minutes: subjTotal });
+        day[s].sessions.forEach((ss) => {
+          if (ss.note) notes.push(ss.note);
+          if (ss.duration === 25) pomoCount++;
+        });
+      }
+    }
+  });
+  const mood = cache.moods?.[dateStr] || null;
+  return { date: dateStr, totalMinutes, subjects, pomoCount, notes, mood };
+}
+
+// ---- 专注度评分 ----
+export async function getFocusScore(dateStr) {
+  await load();
+  const day = cache.records[dateStr];
+  if (!day) return 0;
+  let totalPlanned = 0, totalActual = 0, pomoCount = 0;
+  Object.keys(day).forEach((s) => {
+    if (day[s]) {
+      totalPlanned += day[s].planned || 0;
+      if (day[s].sessions) {
+        day[s].sessions.forEach((ss) => {
+          totalActual += ss.duration || 0;
+          if (ss.duration >= 20 && ss.duration <= 30) pomoCount++;
+        });
+      }
+    }
+  });
+  if (totalActual === 0) return 0;
+  const planRate = totalPlanned > 0 ? Math.min(1, totalActual / totalPlanned) : 0.5;
+  const effort = Math.min(1, totalActual / 480);
+  const pomoBonus = Math.min(1, pomoCount / 8);
+  return Math.round((planRate * 40 + effort * 35 + pomoBonus * 25));
+}
+
+// ---- 周报数据 ----
+export async function getWeeklyReport() {
+  await load();
+  const today = new Date();
+  const dow = today.getDay();
+  const mon = new Date(today);
+  mon.setDate(today.getDate() - ((dow + 6) % 7));
+  const days = [];
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(mon);
+    d.setDate(mon.getDate() + i);
+    const key = fmtDate(d);
+    const summary = await getDailySummary(key);
+    days.push({ date: key, summary, dayName: weekDays[((d.getDay() + 6) % 7)] });
+  }
+  const totalMins = days.reduce((s, d) => s + (d.summary?.totalMinutes || 0), 0);
+  const activeDays = days.filter((d) => (d.summary?.totalMinutes || 0) > 0).length;
+  const subjectTotals = {};
+  days.forEach((d) => {
+    if (d.summary?.subjects) {
+      d.summary.subjects.forEach((subj) => {
+        subjectTotals[subj.name] = (subjectTotals[subj.name] || 0) + subj.minutes;
+      });
+    }
+  });
+  const avgScore = activeDays > 0
+    ? Math.round(days.reduce(async (s, d) => s + (await getFocusScore(d.date)), 0) / activeDays)
+    : 0;
+  return { days, totalMins, activeDays, subjectTotals, avgScore };
+}
 // Session with notes
 export async function addSessionWithNote(dateStr, subject, duration, note) {
   await load();

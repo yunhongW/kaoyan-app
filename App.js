@@ -1,8 +1,10 @@
-﻿import React, { useState, useCallback } from "react";
+import React, { useState, useCallback } from "react";
 import { StatusBar } from "react-native";
 import { NavigationContainer } from "@react-navigation/native";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { Ionicons } from "@expo/vector-icons";
+import * as Notifications from "expo-notifications";
+import * as store from "./src/store";
 import { colors, typography } from "./src/theme";
 
 import DailyScreen from "./src/screens/DailyScreen";
@@ -33,6 +35,25 @@ export default function App() {
 
   const handleSelectDate = useCallback((date) => setCurrentDate(date), []);
   const handleRefresh = useCallback(() => setRefreshKey((k) => k + 1), []);
+
+  // 设置通知
+  useEffect(() => {
+    (async () => {
+      try {
+        const { status } = await Notifications.requestPermissionsAsync();
+        if (status !== "granted") return;
+        await Notifications.cancelAllScheduledNotificationsAsync();
+        const nt = await store.getNotificationTime();
+        const now = new Date();
+        const trigger = new Date(now.getFullYear(), now.getMonth(), now.getDate(), nt.hour, nt.minute, 0);
+        if (trigger <= now) trigger.setDate(trigger.getDate() + 1);
+        await Notifications.scheduleNotificationAsync({
+          content: { title: "考研学习", body: "该学习啦！今天的计划完成了吗？" },
+          trigger: { hour: nt.hour, minute: nt.minute, repeats: true },
+        });
+      } catch (e) {}
+    })();
+  }, []);
 
   return (
     <>

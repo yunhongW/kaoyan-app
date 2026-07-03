@@ -7,6 +7,7 @@ import { Ionicons } from "@expo/vector-icons";
 import * as store from "../store";
 import { fmtDate, formatTimer } from "../utils";
 import { colors, spacing, borderRadius, shadows, typography } from "../theme";
+import * as Notifications from "expo-notifications";
 
 // ===== 计时器 Hook =====
 function useTimer() {
@@ -246,6 +247,13 @@ export default function DailyScreen({ date, onDateChange }) {
   const pomoInterval = useRef(null);
 
   const [noteModalVisible, setNoteModalVisible] = useState(false);
+  const [moodModalVisible, setMoodModalVisible] = useState(false);
+  const [currentMood, setCurrentMood] = useState("");
+  const [moodNote, setMoodNote] = useState("");
+  const [focusScore, setFocusScore] = useState(0);
+  const [dailySummary, setDailySummary] = useState(null);
+  const [subjectSuggestions, setSubjectSuggestions] = useState({});
+  const [notificationTime, setNotificationTime] = useState(null);
   const [pendingSubject, setPendingSubject] = useState(null);
   const [pendingMinutes, setPendingMinutes] = useState(0);
 
@@ -257,8 +265,18 @@ export default function DailyScreen({ date, onDateChange }) {
       setExamDaysLeft(days);
       const s = await store.getSettings();
       if (s.dailyTarget) setDailyTarget(s.dailyTarget);
+      const fs = await store.getFocusScore(dateStr);
+      setFocusScore(fs);
+      const ds = await store.getDailySummary(dateStr);
+      setDailySummary(ds);
+      const md = await store.getMood(dateStr);
+      if (md) setCurrentMood(md.mood);
+      const weights = await store.getSubjectWeights();
+      if (Object.keys(weights).length > 0) setSubjectSuggestions(weights);
+      const nt = await store.getNotificationTime();
+      setNotificationTime(nt);
     })();
-  }, []);
+  }, [dateStr]);  // Also refresh when dateStr changes
 
   const dateRef = useRef(date);
   useEffect(() => {
@@ -354,6 +372,14 @@ export default function DailyScreen({ date, onDateChange }) {
   const handlePomoStop = async (s) => {
     stopPomodoro();
     await handleStop(s);
+  };
+
+  const handleSetMood = async (mood) => {
+    setCurrentMood(mood);
+    await store.setMood(dateStr, mood, moodNote);
+    setMoodModalVisible(false);
+    const ds = await store.getDailySummary(dateStr);
+    setDailySummary(ds);
   };
 
   const handleAddCustom = async () => {
@@ -468,6 +494,36 @@ export default function DailyScreen({ date, onDateChange }) {
             </View>
           )}
         </View>
+        {/* 专注度评分 + 心情 */}
+        <View style={[styles.summaryCard, shadows.md, { flexDirection: "row", justifyContent: "space-between" }]}>
+          <View style={{ alignItems: "center", flex: 1 }}>
+            <Text style={{ ...typography.h1, color: focusScore >= 80 ? colors.accent : focusScore >= 50 ? colors.primary : colors.textSecondary }}>
+              {focusScore}
+            </Text>
+            <Text style={{ ...typography.tiny, color: colors.textSecondary }}>专注度</Text>
+          </View>
+          <View style={{ width: 1, backgroundColor: colors.borderLight }} />
+          <TouchableOpacity style={{ alignItems: "center", flex: 1 }} onPress={() => setMoodModalVisible(true)}>
+            <Text style={{ fontSize: 28 }}>
+              {currentMood === "great" ? "\u{1F929}" :
+               currentMood === "good" ? "\u{1F60A}" :
+               currentMood === "okay" ? "\u{1F914}" :
+               currentMood === "bad" ? "\u{1F61E}" :
+               currentMood === "tired" ? "\u{1F4AA}" : "\u{2795}"}
+            </Text>
+            <Text style={{ ...typography.tiny, color: colors.textSecondary }}>
+              {currentMood ? "已打卡" : "点我打卡"}
+            </Text>
+          </TouchableOpacity>
+          <View style={{ width: 1, backgroundColor: colors.borderLight }} />
+          <View style={{ alignItems: "center", flex: 1 }}>
+            <Text style={{ ...typography.h2, color: dailySummary ? colors.primary : colors.textTertiary }}>
+              {dailySummary ? dailySummary.totalMinutes + "分" : "--"}
+            </Text>
+            <Text style={{ ...typography.tiny, color: colors.textSecondary }}>今日总学</Text>
+          </View>
+        </View>
+
         {/* Pomo banner */}
         {pomodoroMode && pomoState !== "idle" && (
           <View style={[styles.pomoBanner, {
@@ -702,6 +758,54 @@ export default function DailyScreen({ date, onDateChange }) {
         onConfirm={handleNoteConfirm}
         onCancel={handleNoteCancel}
       />
+
+      {/* 心情打卡弹窗 */}
+      <Modal visible={moodModalVisible} transparent animationType="slide" onRequestClose={() => setMoodModalVisible(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modal, shadows.lg]}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>今天学习心情怎么样？</Text>
+              <TouchableOpacity onPress={() => setMoodModalVisible(false)}>
+                <Ionicons name="close" size={22} color={colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
+            <View style={{ padding: spacing.xl }}>
+              <View style={{ flexDirection: "row", justifyContent: "space-around", marginBottom: spacing.lg }}>
+                {[
+                  { emoji: "\u{1F929}", key: "great" },
+                  { emoji: "\u{1F60A}", key: "good" },
+                  { emoji: "\u{1F914}", key: "okay" },
+                  { emoji: "\u{1F61E}", key: "bad" },
+                  { emoji: "\u{1F4AA}", key: "tired" },
+                ].map((item) => (
+                  <TouchableOpacity
+                    key={item.key}
+                    style={[styles.moodBtn, currentMood === item.key && { backgroundColor: colors.accentLight, borderColor: colors.accent }]}
+                    onPress={() => handleSetMood(item.key)}
+                  >
+                    <Text style={{ fontSize: 32 }}>{item.emoji}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+              <TextInput
+                style={styles.customInput}
+                placeholder="今天学习有什么想说的？"
+                value={moodNote}
+                onChangeText={setMoodNote}
+                maxLength={100}
+              />
+              <View style={styles.customBtns}>
+                <TouchableOpacity style={styles.cancelBtn} onPress={() => setMoodModalVisible(false)}>
+                  <Text style={styles.cancelBtnText}>取消</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.confirmBtn} onPress={() => handleSetMood(currentMood || "okay")}>
+                  <Text style={styles.confirmBtnText}>确定</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -877,6 +981,11 @@ const styles = StyleSheet.create({
   confirmBtn: { backgroundColor: colors.primary, borderRadius: borderRadius.md, paddingHorizontal: spacing.xl, paddingVertical: spacing.md },
   confirmBtnText: { ...typography.bodyBold, color: colors.textInverse },
 
+  moodBtn: {
+    width: 52, height: 52, borderRadius: 26,
+    backgroundColor: colors.bg, alignItems: "center", justifyContent: "center",
+    borderWidth: 2, borderColor: colors.borderLight,
+  },
   noteExample: { backgroundColor: colors.accentLight, borderRadius: borderRadius.sm, paddingHorizontal: spacing.sm, paddingVertical: spacing.xs },
   noteExampleText: { fontSize: 12, color: colors.accentDark },
 

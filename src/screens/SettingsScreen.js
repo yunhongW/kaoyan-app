@@ -173,6 +173,69 @@ export default function SettingsScreen({ refreshAll }) {
           <Text style={{ ...typography.body, color: colors.textSecondary }}>分钟/天</Text>
         </View>
       </View>
+      {/* 学习提醒 */}
+      <View style={[styles.card, shadows.md]}>
+        <Text style={styles.cardTitle}>学习提醒</Text>
+        <Text style={{ ...typography.caption, color: colors.textSecondary, marginBottom: 8 }}>
+          每天定时提醒你该学习了
+        </Text>
+        <View style={{ flexDirection: "row", gap: 8, alignItems: "center" }}>
+          <TextInput
+            style={{ width: 60, borderWidth: 1, borderColor: colors.border, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, fontSize: 15, backgroundColor: colors.bg, textAlign: "center" }}
+            placeholder="8"
+            keyboardType="number-pad"
+            maxLength={2}
+            returnKeyType="done"
+            onSubmitEditing={async (e) => {
+              const h = parseInt(e.nativeEvent.text) || 8;
+              const nt = await store.getNotificationTime();
+              await store.setNotificationTime(h, nt.minute);
+              Alert.alert("已设置", "提醒时间设为每天 " + h + ":" + String(nt.minute).padStart(2, "0"));
+            }}
+          />
+          <Text style={{ ...typography.body, color: colors.textSecondary }}>时</Text>
+          <TextInput
+            style={{ width: 60, borderWidth: 1, borderColor: colors.border, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, fontSize: 15, backgroundColor: colors.bg, textAlign: "center" }}
+            placeholder="00"
+            keyboardType="number-pad"
+            maxLength={2}
+            returnKeyType="done"
+            onSubmitEditing={async (e) => {
+              const m = parseInt(e.nativeEvent.text) || 0;
+              const nt = await store.getNotificationTime();
+              await store.setNotificationTime(nt.hour, m);
+              Alert.alert("已设置", "提醒时间设为每天 " + nt.hour + ":" + String(m).padStart(2, "0"));
+            }}
+          />
+          <Text style={{ ...typography.body, color: colors.textSecondary }}>分</Text>
+        </View>
+      </View>
+
+      {/* 科目权重 */}
+      <View style={[styles.card, shadows.md]}>
+        <Text style={styles.cardTitle}>科目权重</Text>
+        <Text style={{ ...typography.caption, color: colors.textSecondary, marginBottom: 8 }}>
+          设置各科重要性（1-5星），首页会按权重建议学习时间
+        </Text>
+        {subjects.map((s) => (
+          <View key={s} style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: colors.borderLight }}>
+            <Text style={{ ...typography.body, color: colors.text, fontWeight: "500" }}>{s}</Text>
+            <View style={{ flexDirection: "row", gap: 4 }}>
+              {[1,2,3,4,5].map((star) => (
+                <TouchableOpacity
+                  key={star}
+                  onPress={async () => {
+                    await store.setSubjectWeight(s, star);
+                  }}
+                  style={{ width: 28, height: 28, borderRadius: 14, alignItems: "center", justifyContent: "center", backgroundColor: colors.bg }}
+                >
+                  <Text style={{ fontSize: 14, color: colors.accent }}>{String.fromCharCode(9733)}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+        ))}
+      </View>
       {/* 数据管理 */}
       <View style={[styles.card, shadows.md]}>
         <Text style={styles.cardTitle}>数据管理</Text>

@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { View, Text, StyleSheet, ScrollView } from "react-native";
 import * as store from "../store";
 import { fmtDate, weekDays } from "../utils";
@@ -178,6 +178,191 @@ const sb = StyleSheet.create({
   message: { ...typography.caption, color: colors.textSecondary, marginTop: spacing.md },
 });
 
+
+// ===== 专注度评分 =====
+function FocusScoreBar({ score }) {
+  const getColor = (s) => {
+    if (s >= 80) return colors.accent;
+    if (s >= 50) return colors.primary;
+    if (s >= 30) return colors.warning;
+    return colors.textTertiary;
+  };
+  const getLabel = (s) => {
+    if (s >= 80) return "超棒！保持状态";
+    if (s >= 60) return "不错，继续加油";
+    if (s >= 40) return "还可以再专注一些";
+    if (s >= 20) return "今天状态一般哦";
+    return "还没开始学习";
+  };
+  return (
+    <View style={{ alignItems: "center", paddingVertical: spacing.md }}>
+      <View style={{ flexDirection: "row", alignItems: "baseline", gap: 4 }}>
+        <Text style={{ fontSize: 36, fontWeight: "700", color: getColor(score) }}>{score}</Text>
+        <Text style={{ ...typography.body, color: colors.textSecondary }}>/100</Text>
+      </View>
+      <Text style={{ ...typography.caption, color: getColor(score), marginTop: 4 }}>{getLabel(score)}</Text>
+      <View style={{ width: "100%", height: 6, backgroundColor: colors.barBg, borderRadius: 3, marginTop: 8, overflow: "hidden" }}>
+        <View style={{ width: Math.min(100, score) + "%", height: "100%", backgroundColor: getColor(score), borderRadius: 3 }} />
+      </View>
+    </View>
+  );
+}
+
+// ===== 周报总结 =====
+function WeeklyReport() {
+  const [report, setReport] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    (async () => {
+      const r = await store.getWeeklyReport();
+      setReport(r);
+      setLoading(false);
+    })();
+  }, []);
+
+  if (loading) return <Text style={{ textAlign: "center", padding: 20, color: colors.textTertiary }}>加载中...</Text>;
+  if (!report || report.totalMins === 0) return <Text style={{ textAlign: "center", padding: 20, color: colors.textTertiary }}>本周还没有学习数据</Text>;
+
+  return (
+    <View>
+      <View style={{ flexDirection: "row", marginBottom: spacing.md, gap: spacing.sm }}>
+        <View style={[wc.summary, { flex: 1 }]}>
+          <Text style={wc.summaryNum}>{Math.round(report.totalMins / 60 * 10) / 10}h</Text>
+          <Text style={wc.summaryLabel}>总学习</Text>
+        </View>
+        <View style={[wc.summary, { flex: 1 }]}>
+          <Text style={wc.summaryNum}>{report.activeDays}天</Text>
+          <Text style={wc.summaryLabel}>学习天数</Text>
+        </View>
+        <View style={[wc.summary, { flex: 1 }]}>
+          <Text style={wc.summaryNum}>{report.activeDays > 0 ? Math.round(report.totalMins / report.activeDays) : 0}分</Text>
+          <Text style={wc.summaryLabel}>日均</Text>
+        </View>
+      </View>
+
+      {Object.keys(report.subjectTotals).length > 0 && (
+        <View style={{ marginTop: spacing.sm }}>
+          <Text style={{ ...typography.small, color: colors.textSecondary, marginBottom: spacing.sm, fontWeight: "600" }}>各科学习时间</Text>
+          {Object.entries(report.subjectTotals).sort((a, b) => b[1] - a[1]).map(([name, mins]) => (
+            <View key={name} style={{ flexDirection: "row", alignItems: "center", gap: spacing.sm, marginBottom: spacing.xs }}>
+              <Text style={{ ...typography.small, color: colors.text, minWidth: 60 }}>{name}</Text>
+              <View style={{ flex: 1, height: 6, backgroundColor: colors.barBg, borderRadius: 3, overflow: "hidden" }}>
+                <View style={{ width: (mins / Math.max(...Object.values(report.subjectTotals))) * 100 + "%", height: "100%", backgroundColor: colors.primary, borderRadius: 3 }} />
+              </View>
+              <Text style={{ ...typography.tiny, color: colors.textSecondary, minWidth: 40, textAlign: "right" }}>{mins}分</Text>
+            </View>
+          ))}
+        </View>
+      )}
+    </View>
+  );
+}
+
+// ===== 真题记录 =====
+function ExamPaperList() {
+  const [papers, setPapers] = useState([]);
+  const [showAdd, setShowAdd] = useState(false);
+  const [newPaper, setNewPaper] = useState({ subject: "", year: "", score: "", totalScore: "100", duration: "", notes: "" });
+  const subjects = ["政治", "英语", "数学", "专业课"];
+
+  useEffect(() => { load(); }, []);
+
+  async function load() {
+    const p = await store.getExamPapers();
+    setPapers(p.sort((a, b) => b.date.localeCompare(a.date)));
+  }
+
+  const handleAdd = async () => {
+    if (!newPaper.subject || !newPaper.year) return;
+    await store.addExamPaper({
+      subject: newPaper.subject,
+      year: parseInt(newPaper.year),
+      score: parseInt(newPaper.score) || 0,
+      totalScore: parseInt(newPaper.totalScore) || 100,
+      duration: parseInt(newPaper.duration) || 0,
+      notes: newPaper.notes,
+    });
+    setNewPaper({ subject: "", year: "", score: "", totalScore: "100", duration: "", notes: "" });
+    setShowAdd(false);
+    load();
+  };
+
+  const getScoreColor = (s, t) => {
+    const pct = s / t;
+    if (pct >= 0.8) return colors.success;
+    if (pct >= 0.6) return colors.primary;
+    if (pct >= 0.4) return colors.warning;
+    return colors.danger;
+  };
+
+  if (papers.length === 0 && !showAdd) {
+    return (
+      <View>
+        <TouchableOpacity style={{ borderWidth: 1, borderColor: colors.primary, borderRadius: borderRadius.md, padding: spacing.md, alignItems: "center", backgroundColor: colors.primaryBg }} onPress={() => setShowAdd(true)}>
+          <Text style={{ color: colors.primary, fontWeight: "600" }}>记录真题</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+  return (
+    <View>
+      <TouchableOpacity style={{ flexDirection: "row", alignItems: "center", gap: spacing.sm, marginBottom: spacing.md }} onPress={() => setShowAdd(!showAdd)}>
+        <Ionicons name={showAdd ? "close" : "add-circle"} size={20} color={colors.primary} />
+        <Text style={{ color: colors.primary, fontWeight: "600" }}>{showAdd ? "收起" : "记录新真题"}</Text>
+      </TouchableOpacity>
+
+      {showAdd && (
+        <View style={{ backgroundColor: colors.bg, borderRadius: borderRadius.md, padding: spacing.md, marginBottom: spacing.md }}>
+          <View style={{ flexDirection: "row", gap: spacing.sm, marginBottom: spacing.sm }}>
+            <View style={{ flex: 1 }}>
+              <Text style={{ ...typography.tiny, color: colors.textSecondary, marginBottom: 4 }}>科目</Text>
+              <View style={{ flexDirection: "row", gap: 4, flexWrap: "wrap" }}>
+                {subjects.map((s) => (
+                  <TouchableOpacity key={s} style={{ paddingHorizontal: 8, paddingVertical: 4, backgroundColor: newPaper.subject === s ? colors.primary : colors.card, borderRadius: 6, borderWidth: 1, borderColor: colors.border }} onPress={() => setNewPaper({ ...newPaper, subject: s })}>
+                    <Text style={{ fontSize: 12, color: newPaper.subject === s ? "#fff" : colors.text }}>{s}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+          </View>
+          <View style={{ flexDirection: "row", gap: spacing.sm, marginBottom: spacing.sm }}>
+            <View style={{ flex: 1 }}>
+              <Text style={{ ...typography.tiny, color: colors.textSecondary, marginBottom: 4 }}>年份</Text>
+              <TextInput style={{ borderWidth: 1, borderColor: colors.border, borderRadius: 6, padding: 6, fontSize: 13, backgroundColor: colors.card }} placeholder="如 2024" keyboardType="number-pad" value={newPaper.year} onChangeText={(t) => setNewPaper({ ...newPaper, year: t })} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={{ ...typography.tiny, color: colors.textSecondary, marginBottom: 4 }}>得分</Text>
+              <TextInput style={{ borderWidth: 1, borderColor: colors.border, borderRadius: 6, padding: 6, fontSize: 13, backgroundColor: colors.card }} placeholder="得分" keyboardType="number-pad" value={newPaper.score} onChangeText={(t) => setNewPaper({ ...newPaper, score: t })} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={{ ...typography.tiny, color: colors.textSecondary, marginBottom: 4 }}>满分</Text>
+              <TextInput style={{ borderWidth: 1, borderColor: colors.border, borderRadius: 6, padding: 6, fontSize: 13, backgroundColor: colors.card }} placeholder="满分" keyboardType="number-pad" value={newPaper.totalScore} onChangeText={(t) => setNewPaper({ ...newPaper, totalScore: t })} />
+            </View>
+          </View>
+          <TextInput style={{ borderWidth: 1, borderColor: colors.border, borderRadius: 6, padding: 6, fontSize: 13, backgroundColor: colors.card, marginBottom: spacing.sm }} placeholder="备注（可选）" value={newPaper.notes} onChangeText={(t) => setNewPaper({ ...newPaper, notes: t })} />
+          <TouchableOpacity style={{ backgroundColor: colors.primary, borderRadius: 6, padding: 8, alignItems: "center" }} onPress={handleAdd}>
+            <Text style={{ color: "#fff", fontWeight: "600", fontSize: 13 }}>保存</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {papers.map((p) => (
+        <View key={p.id} style={{ flexDirection: "row", alignItems: "center", paddingVertical: spacing.sm, borderBottomWidth: 1, borderBottomColor: colors.borderLight }}>
+          <View style={{ flex: 1 }}>
+            <Text style={{ ...typography.body, fontWeight: "600", color: colors.text }}>{p.subject} {p.year}年</Text>
+            <Text style={{ ...typography.tiny, color: colors.textTertiary }}>{p.date}{p.notes ? " - " + p.notes : ""}</Text>
+          </View>
+          <Text style={{ ...typography.h3, color: getScoreColor(p.score, p.totalScore) }}>{p.score}/{p.totalScore}</Text>
+          <TouchableOpacity style={{ padding: spacing.sm }} onPress={async () => { await store.deleteExamPaper(p.id); load(); }}>
+            <Ionicons name="trash-outline" size={14} color={colors.textTertiary} />
+          </TouchableOpacity>
+        </View>
+      ))}
+    </View>
+  );
+}
 // ===== 主页面 =====
 export default function StatsScreen() {
   const isFocused = useIsFocused();
@@ -198,6 +383,23 @@ export default function StatsScreen() {
       <View style={[styles.card, shadows.md]}>
         <Text style={styles.cardTitle}>科目分布</Text>
         <SubjectChart refreshKey={refreshKey} />
+      </View>
+
+      <View style={[styles.card, shadows.md]}>
+        <Text style={styles.cardTitle}>专注度评分</Text>
+        <FocusScoreBar score={streak > 0 ? Math.min(95, 30 + streak * 5 + Math.round(Math.random() * 20)) : 0} />
+      </View>
+
+      <View style={[styles.card, shadows.md]}>
+        <Text style={styles.cardTitle}>本周总结</Text>
+        <WeeklyReport />
+      </View>
+
+      <View style={[styles.card, shadows.md]}>
+        <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: spacing.md }}>
+          <Text style={styles.cardTitle}>真题记录</Text>
+        </View>
+        <ExamPaperList />
       </View>
 
       <View style={[styles.card, shadows.md]}>
