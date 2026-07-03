@@ -188,7 +188,7 @@ function NoteModal({ visible, subject, onConfirm, onCancel }) {
           </View>
           <View style={{ padding: spacing.xl }}>
             <Text style={{ ...typography.body, color: colors.textSecondary, marginBottom: spacing.md }}>
-              {subject} — 记录一下学了什么
+              {subject} - 记录一下学了什么
             </Text>
             <TextInput
               style={styles.customInput}
@@ -220,8 +220,8 @@ function NoteModal({ visible, subject, onConfirm, onCancel }) {
             </View>
           </View>
         </View>
-      </Modal>
-    );
+      </View>
+    </Modal>
   );
 }
 
