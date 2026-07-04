@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useCallback } from "react";
-import { View, Text, StyleSheet, ScrollView } from "react-native";
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput } from "react-native";
 import * as store from "../store";
 import { fmtDate, weekDays } from "../utils";
+import { Ionicons } from "@expo/vector-icons";
 import { colors, spacing, borderRadius, shadows, typography } from "../theme";
 import { useIsFocused } from "@react-navigation/native";
 

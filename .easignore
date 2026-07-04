@@ -1,4 +1,0 @@
-﻿# 排除 npm 缓存目录
-.npm-cache/
-.cache/
-node_modules/.cache/
