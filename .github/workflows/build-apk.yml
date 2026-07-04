@@ -1,4 +1,4 @@
-name: Build Android APK
+﻿name: Build Android APK
 
 on:
   push:
@@ -24,20 +24,28 @@ jobs:
           eas-version: latest
           token: ${{ secrets.EXPO_TOKEN }}
 
-      - name: Build APK with EAS
-        run: eas build --platform android --profile preview --non-interactive --no-wait
+      - name: Build APK with EAS (wait for completion)
+        run: eas build --platform android --profile preview --non-interactive
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
 
       - name: Download APK artifact
         run: |
-          sleep 300
-          npx --yes eas-cli@latest build:list --platform android --limit 1 --json > build-info.json
-          echo "APK_URL=$(cat build-info.json | npx --yes json artifacts.applicationArchiveUrl)" >> $GITHUB_ENV
+          BUILD_INFO=$(eas build:list --platform android --limit 1 --json 2>/dev/null || eas build:list --platform android --limit 1 --non-interactive --json 2>/dev/null)
+          echo "Build info: $BUILD_INFO"
+          APK_URL=$(echo "$BUILD_INFO" | npx --yes json artifacts.applicationArchiveUrl 2>/dev/null || echo "")
+          if [ -n "$APK_URL" ]; then
+            echo "Downloading APK from $APK_URL"
+            curl -L -o kaoyan-app.apk "$APK_URL"
+            echo "APK downloaded successfully"
+          else
+            echo "Could not find APK URL in build info"
+            echo "$BUILD_INFO" | head -50
+          fi
 
       - name: Upload APK as artifact
         uses: actions/upload-artifact@v4
         with:
           name: kaoyan-app-apk
           path: "*.apk"
-          retention-days: 7
+          retention-days: 30
