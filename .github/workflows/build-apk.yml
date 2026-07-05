@@ -26,45 +26,38 @@ jobs:
           eas-version: latest
           token: ${{ secrets.EXPO_TOKEN }}
 
-      - name: Submit EAS build
+      - name: Submit EAS build and capture URL
         run: |
-          BUILD_OUTPUT=$(eas build --platform android --profile preview --non-interactive --json 2>&1)
-          echo "$BUILD_OUTPUT"
-          BUILD_ID=$(echo "$BUILD_OUTPUT" | node -p "JSON.parse(require('fs').readFileSync('/dev/stdin','utf8')).id")
-          echo "BUILD_ID=$BUILD_ID" >> $GITHUB_ENV
+          eas build --platform android --profile preview --non-interactive 2>&1 | tee build-output.txt
+          BUILD_URL=$(grep -oP 'https://expo\.dev/accounts/[^/]+/projects/[^/]+/builds/[a-z0-9-]+' build-output.txt | head -1)
+          echo "BUILD_URL=$BUILD_URL" >> $GITHUB_ENV
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
 
       - name: Wait for build to finish
         run: |
-          echo "Waiting for EAS build $BUILD_ID to complete..."
-          for i in $(seq 1 60); do
-            STATUS=$(eas build:view "$BUILD_ID" --json --non-interactive 2>/dev/null | node -p "JSON.parse(require('fs').readFileSync('/dev/stdin','utf8')).status")
-            echo "Build status: $STATUS (attempt $i)"
-            if [ "$STATUS" = "FINISHED" ]; then
-              echo "Build completed!"
-              break
-            elif [ "$STATUS" = "ERRORED" ] || [ "$STATUS" = "CANCELLED" ]; then
-              echo "Build failed with status: $STATUS"
-              exit 1
+          echo "Build URL: $BUILD_URL"
+          for i in $(seq 1 90); do
+            JSON=$(eas build:list --platform android --limit 1 --status FINISHED --json --non-interactive 2>/dev/null)
+            URL=$(echo "$JSON" | node -p "const j=JSON.parse(require('fs').readFileSync('/dev/stdin','utf8')); (j[0]?.artifacts?.applicationArchiveUrl||'')")
+            if [ -n "$URL" ]; then
+              echo "Build finished! APK URL: $URL"
+              echo "APK_URL=$URL" >> $GITHUB_ENV
+              exit 0
             fi
+            echo "Waiting... ($i/90)"
             sleep 60
           done
+          echo "ERROR: Timeout waiting for build"
+          exit 1
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
 
       - name: Download APK
         run: |
-          URL=$(eas build:view "$BUILD_ID" --json --non-interactive 2>/dev/null | node -p "JSON.parse(require('fs').readFileSync('/dev/stdin','utf8')).artifacts?.applicationArchiveUrl||''")
-          echo "APK URL: $URL"
-          if [ -n "$URL" ]; then
-            curl -L -o kaoyan-app.apk "$URL"
-            ls -lh kaoyan-app.apk
-          else
-            echo "ERROR: No APK URL found"
-            eas build:view "$BUILD_ID" --json --non-interactive
-            exit 1
-          fi
+          echo "Downloading from $APK_URL"
+          curl -L -o kaoyan-app.apk "$APK_URL"
+          ls -lh kaoyan-app.apk
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
 
