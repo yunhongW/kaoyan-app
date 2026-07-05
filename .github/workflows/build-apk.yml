@@ -1,9 +1,9 @@
 name: Build Android APK
 
 on:
+  workflow_dispatch:
   push:
     branches: [main, master]
-  workflow_dispatch:
 
 jobs:
   build:
@@ -26,28 +26,48 @@ jobs:
           eas-version: latest
           token: ${{ secrets.EXPO_TOKEN }}
 
-      - name: Build and wait
-        run: npx eas-cli build --platform android --profile preview --non-interactive --wait
+      - name: Submit EAS build
+        id: submit
+        run: |
+          OUTPUT=$(npx eas-cli build --platform android --profile preview --non-interactive 2>&1)
+          echo "$OUTPUT"
+          # Extract build URL from output (e.g. https://expo.dev/accounts/.../builds/xxx)
+          BUILD_URL=$(echo "$OUTPUT" | grep -oE 'https://expo\.dev/accounts/[^ ]+/builds/[a-f0-9-]+' | head -1)
+          echo "build_url=$BUILD_URL" >> $GITHUB_OUTPUT
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Wait for build completion
+        run: |
+          BUILD_URL="${{ steps.submit.outputs.build_url }}"
+          echo "Build URL: $BUILD_URL"
+          for i in $(seq 1 60); do
+            INFO=$(npx eas-cli build:view "$BUILD_URL" --json --non-interactive 2>/dev/null || echo "{}")
+            STATUS=$(echo "$INFO" | node -p "try{JSON.parse(require('fs').readFileSync('/dev/stdin','utf8')).status}catch(e){'UNKNOWN'}")
+            echo "[$i] Status: $STATUS"
+            if [ "$STATUS" = "FINISHED" ]; then
+              APK_URL=$(echo "$INFO" | node -p "try{JSON.parse(require('fs').readFileSync('/dev/stdin','utf8')).artifacts?.applicationArchiveUrl||''}catch(e){''}")
+              echo "Build finished!"
+              echo "APK_URL=$APK_URL" >> $GITHUB_ENV
+              exit 0
+            elif [ "$STATUS" = "ERRORED" ] || [ "$STATUS" = "CANCELLED" ]; then
+              echo "Build failed: $STATUS"
+              exit 1
+            fi
+            sleep 60
+          done
+          echo "Timeout waiting for build"
+          exit 1
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
 
       - name: Download APK
         run: |
-          sleep 10
-          URL=$(npx eas-cli build:list --platform android --limit 1 --status FINISHED --json --non-interactive 2>/dev/null | node -p "const d=JSON.parse(require('fs').readFileSync('/dev/stdin','utf8')); d[0]?.artifacts?.applicationArchiveUrl||''")
-          echo "APK URL: $URL"
-          if [ -n "$URL" ]; then
-            curl -L -o kaoyan-app.apk "$URL"
-            ls -lh kaoyan-app.apk
-          else
-            echo "No APK URL found, listing recent builds:"
-            npx eas-cli build:list --platform android --limit 3 --non-interactive
-            exit 1
-          fi
-        env:
-          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          echo "Downloading: $APK_URL"
+          curl -L -o kaoyan-app.apk "$APK_URL"
+          ls -lh kaoyan-app.apk
 
-      - name: Upload APK artifact
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: kaoyan-app-apk
