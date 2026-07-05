@@ -1,4 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { fmtDate, fmtTime, weekDays } from "./utils";
 
 const KEY = "kaoyan_data";
 const DEFAULT_SUBJECTS = ["政治", "英语", "数学", "专业课"];
@@ -34,6 +35,9 @@ function _migrate() {
       if (typeof day[s].planned !== "number") day[s].planned = 0;
     });
   });
+  if (!cache.reviewTopics) cache.reviewTopics = {};
+  if (!cache.milestones) cache.milestones = [];
+  if (!cache.dailyNotes) cache.dailyNotes = {};
 }
 
 async function save() {
@@ -105,8 +109,8 @@ export async function addSession(dateStr, subject, duration) {
   const now = new Date();
   const end = new Date(now.getTime() + Math.round(duration) * 60000);
   day[subject].sessions.push({
-    start: _fmtTime(now),
-    end: _fmtTime(end),
+    start: fmtTime(now),
+    end: fmtTime(end),
     duration: Math.round(duration),
   });
   await save();
@@ -193,7 +197,7 @@ export async function getStreak() {
   for (let i = 0; i < 365; i++) {
     const d = new Date(t);
     d.setDate(d.getDate() - i);
-    const key = _fmtDate(d);
+    const key = fmtDate(d);
     const day = cache.records[key] || {};
     let total = 0;
     Object.keys(day).forEach((s) => {
@@ -253,18 +257,6 @@ export async function getDayRecords(dateStr) {
   });
   return copy;
 }
-
-function _fmtTime(d) {
-  return String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0");
-}
-
-function _fmtDate(d) {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
-}
-
 
 // ---- 考研专属功能 ----
 
@@ -458,9 +450,11 @@ export async function getWeeklyReport() {
       });
     }
   });
-  const avgScore = activeDays > 0
-    ? Math.round(days.reduce(async (s, d) => s + (await getFocusScore(d.date)), 0) / activeDays)
-    : 0;
+  let totalScore = 0;
+  for (const d of days) {
+    totalScore += await getFocusScore(d.date);
+  }
+  const avgScore = activeDays > 0 ? Math.round(totalScore / activeDays) : 0;
   return { days, totalMins, activeDays, subjectTotals, avgScore };
 }
 // Session with notes
@@ -471,10 +465,210 @@ export async function addSessionWithNote(dateStr, subject, duration, note) {
   const now = new Date();
   const end = new Date(now.getTime() + Math.round(duration) * 60000);
   day[subject].sessions.push({
-    start: _fmtTime(now),
-    end: _fmtTime(end),
+    start: fmtTime(now),
+    end: fmtTime(end),
     duration: Math.round(duration),
     note: note || "",
   });
+  await save();
+}
+
+// ---- 复习进度追踪 ----
+
+export async function getReviewTopics() {
+  await load();
+  return cache.reviewTopics || {};
+}
+
+export async function addReviewTopicGroup(subject, topicName) {
+  await load();
+  if (!cache.reviewTopics[subject]) cache.reviewTopics[subject] = [];
+  cache.reviewTopics[subject].push({
+    id: Date.now().toString(),
+    name: topicName.trim(),
+    chapters: [],
+  });
+  await save();
+}
+
+export async function addChapter(subject, topicId, chapterName) {
+  await load();
+  const topics = cache.reviewTopics[subject];
+  if (!topics) return;
+  const topic = topics.find((t) => t.id === topicId);
+  if (!topic) return;
+  topic.chapters.push({
+    id: Date.now().toString(),
+    name: chapterName.trim(),
+    completed: false,
+  });
+  await save();
+}
+
+export async function toggleChapterComplete(subject, topicId, chapterId) {
+  await load();
+  const topics = cache.reviewTopics[subject];
+  if (!topics) return;
+  const topic = topics.find((t) => t.id === topicId);
+  if (!topic) return;
+  const ch = topic.chapters.find((c) => c.id === chapterId);
+  if (ch) ch.completed = !ch.completed;
+  await save();
+}
+
+export async function deleteReviewTopicGroup(subject, topicId) {
+  await load();
+  if (cache.reviewTopics[subject]) {
+    cache.reviewTopics[subject] = cache.reviewTopics[subject].filter((t) => t.id !== topicId);
+    await save();
+  }
+}
+
+export async function deleteChapter(subject, topicId, chapterId) {
+  await load();
+  const topics = cache.reviewTopics[subject];
+  if (!topics) return;
+  const topic = topics.find((t) => t.id === topicId);
+  if (!topic) return;
+  topic.chapters = topic.chapters.filter((c) => c.id !== chapterId);
+  await save();
+}
+
+export async function getReviewProgress(subject) {
+  await load();
+  const topics = cache.reviewTopics[subject] || [];
+  let totalChapters = 0, completedChapters = 0;
+  topics.forEach((t) => {
+    t.chapters.forEach((c) => {
+      totalChapters++;
+      if (c.completed) completedChapters++;
+    });
+  });
+  return {
+    totalChapters,
+    completedChapters,
+    pct: totalChapters > 0 ? Math.round((completedChapters / totalChapters) * 100) : 0,
+    topics,
+  };
+}
+
+export async function getAllReviewProgress() {
+  await load();
+  const result = {};
+  for (const subject of cache.subjects) {
+    result[subject] = await getReviewProgress(subject);
+  }
+  Object.keys(cache.reviewTopics).forEach((s) => {
+    if (!result[s]) result[s] = { totalChapters: 0, completedChapters: 0, pct: 0, topics: [] };
+  });
+  return result;
+}
+
+// ---- 学习里程碑 ----
+
+export async function getMilestones() {
+  await load();
+  return cache.milestones || [];
+}
+
+export async function addMilestone({ title, subject, targetDate, totalMinutes }) {
+  await load();
+  const today = fmtDate(new Date());
+  const ms = {
+    id: Date.now().toString(),
+    title: title.trim(),
+    subject,
+    targetDate,
+    totalMinutes: Math.round(totalMinutes),
+    completedMinutes: 0,
+    createdAtDate: today,
+    dailyTarget: 0,
+  };
+  cache.milestones.push(ms);
+  await save();
+  await recalculateMilestones();
+  return ms.id;
+}
+
+export async function updateMilestone(id, updates) {
+  await load();
+  const ms = cache.milestones.find((m) => m.id === id);
+  if (!ms) return;
+  Object.assign(ms, updates);
+  await save();
+}
+
+export async function deleteMilestone(id) {
+  await load();
+  cache.milestones = cache.milestones.filter((m) => m.id !== id);
+  await save();
+}
+
+export async function recalculateMilestones() {
+  await load();
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  cache.milestones.forEach((ms) => {
+    let completed = 0;
+    Object.keys(cache.records).forEach((dateStr) => {
+      if (dateStr < ms.createdAtDate) return;
+      const day = cache.records[dateStr];
+      if (!day || !day[ms.subject]) return;
+      const sessions = day[ms.subject].sessions || [];
+      completed += sessions.reduce((s, x) => s + (x.duration || 0), 0);
+    });
+    ms.completedMinutes = completed;
+    const target = new Date(ms.targetDate + "T00:00:00");
+    const remainingDays = Math.max(1, Math.ceil((target.getTime() - today.getTime()) / 86400000));
+    const remainingMinutes = Math.max(0, ms.totalMinutes - completed);
+    ms.dailyTarget = Math.round(remainingMinutes / remainingDays);
+  });
+  await save();
+}
+
+// ---- 每日笔记 ----
+
+export async function getDailyNote(dateStr) {
+  await load();
+  return (cache.dailyNotes && cache.dailyNotes[dateStr]) || "";
+}
+
+export async function setDailyNote(dateStr, text) {
+  await load();
+  if (!cache.dailyNotes) cache.dailyNotes = {};
+  cache.dailyNotes[dateStr] = text.trim();
+  await save();
+}
+
+// ---- 快捷规划 ----
+
+export async function getDayPlan(dateStr) {
+  await load();
+  const day = cache.records[dateStr];
+  if (!day) return {};
+  const plan = {};
+  Object.keys(day).forEach((s) => {
+    if (day[s].planned > 0) plan[s] = day[s].planned;
+  });
+  return plan;
+}
+
+export async function applyDayPlan(dateStr, plan) {
+  await load();
+  const day = ensureDay(dateStr);
+  Object.keys(plan).forEach((s) => {
+    if (!day[s]) day[s] = { planned: 0, sessions: [] };
+    day[s].planned = Math.max(0, Math.round(plan[s]));
+  });
+  await save();
+}
+
+export async function getDailyTemplate() {
+  await load();
+  return cache.dailyTemplate || {};
+}
+
+export async function saveDailyTemplate(plan) {
+  await load();
+  cache.dailyTemplate = plan;
   await save();
 }

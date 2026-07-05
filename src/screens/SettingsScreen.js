@@ -5,7 +5,7 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import * as store from "../store";
-import { colors, spacing, borderRadius, shadows, typography } from "../theme";
+import { colors, spacing, borderRadius, shadows, typography, subjectColors } from "../theme";
 
 export default function SettingsScreen({ refreshAll }) {
   const [subjects, setSubjects] = useState([]);
@@ -14,6 +14,7 @@ export default function SettingsScreen({ refreshAll }) {
   const [examDate, setExamDateState] = useState("");
   const [showExamDateInput, setShowExamDateInput] = useState(false);
   const [examDateInput, setExamDateInput] = useState("");
+  const [subjectWeights, setSubjectWeights] = useState({});
 
   useEffect(() => { load(); }, []);
 
@@ -21,6 +22,7 @@ export default function SettingsScreen({ refreshAll }) {
     setSubjects(await store.getSubjects());
     const ed = await store.getExamDate();
     if (ed) setExamDateState(ed);
+    setSubjectWeights(await store.getSubjectWeights());
   }
 
   const handleAdd = async () => {
@@ -40,13 +42,39 @@ export default function SettingsScreen({ refreshAll }) {
   const handleExport = async () => {
     try {
       const json = await store.exportJSON();
-      const { shareAsync } = require("expo-file-system");
-      const { writeAsStringAsync, documentDirectory } = require("expo-file-system");
-      const path = documentDirectory + "kaoyan_backup.json";
-      await writeAsStringAsync(path, json);
-      await shareAsync(path);
-    } catch (_) {
-      Alert.alert("导出", "数据已准备好，请使用文件分享功能。");
+      // 尝试使用 expo-file-system + expo-sharing
+      const FileSystem = require("expo-file-system");
+      const Sharing = require("expo-sharing");
+      const path = FileSystem.documentDirectory + "kaoyan_backup.json";
+      await FileSystem.writeAsStringAsync(path, json);
+      if (await Sharing.isAvailableAsync()) {
+        await Sharing.shareAsync(path);
+      } else {
+        Alert.alert("导出成功", "备份文件已保存到本地。");
+      }
+    } catch (e) {
+      Alert.alert("导出失败", e.message || "请确保已安装 expo-file-system 和 expo-sharing");
+    }
+  };
+
+  const handleImport = async () => {
+    try {
+      const DocumentPicker = require("expo-document-picker");
+      const FileSystem = require("expo-file-system");
+      const result = await DocumentPicker.getDocumentAsync({ type: "application/json", copyToCacheDirectory: true });
+      if (result.canceled) return;
+      const file = result.assets?.[0] || result;
+      const content = await FileSystem.readAsStringAsync(file.uri);
+      const res = await store.importJSON(content);
+      if (res.success) {
+        Alert.alert("导入成功", "学习数据已恢复！");
+        load();
+        if (refreshAll) refreshAll();
+      } else {
+        Alert.alert("导入失败", res.error);
+      }
+    } catch (e) {
+      Alert.alert("导入失败", e.message || "请确保已安装 expo-document-picker 和 expo-file-system");
     }
   };
 
@@ -91,7 +119,7 @@ export default function SettingsScreen({ refreshAll }) {
         {subjects.map((s, i) => (
           <View key={s} style={[styles.subjectItem, i === subjects.length - 1 && { borderBottomWidth: 0 }]}>
             <View style={styles.subjectLeft}>
-              <View style={[styles.subjectDot, { backgroundColor: colors.subjectColors?.[i % 8] || colors.primary }]} />
+              <View style={[styles.subjectDot, { backgroundColor: subjectColors[i % subjectColors.length] || colors.primary }]} />
               <Text style={styles.subjectName}>{s}</Text>
             </View>
             <TouchableOpacity onPress={() => handleRemove(s)} style={styles.deleteBtn}>
@@ -221,17 +249,21 @@ export default function SettingsScreen({ refreshAll }) {
           <View key={s} style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: colors.borderLight }}>
             <Text style={{ ...typography.body, color: colors.text, fontWeight: "500" }}>{s}</Text>
             <View style={{ flexDirection: "row", gap: 4 }}>
-              {[1,2,3,4,5].map((star) => (
-                <TouchableOpacity
-                  key={star}
-                  onPress={async () => {
-                    await store.setSubjectWeight(s, star);
-                  }}
-                  style={{ width: 28, height: 28, borderRadius: 14, alignItems: "center", justifyContent: "center", backgroundColor: colors.bg }}
-                >
-                  <Text style={{ fontSize: 14, color: colors.accent }}>{String.fromCharCode(9733)}</Text>
-                </TouchableOpacity>
-              ))}
+              {[1,2,3,4,5].map((star) => {
+                  const currentWeight = subjectWeights[s] || 3;
+                  return (
+                    <TouchableOpacity
+                      key={star}
+                      onPress={async () => {
+                        await store.setSubjectWeight(s, star);
+                        setSubjectWeights(await store.getSubjectWeights());
+                      }}
+                      style={{ width: 28, height: 28, borderRadius: 14, alignItems: "center", justifyContent: "center", backgroundColor: star <= currentWeight ? colors.accentLight : colors.bg }}
+                    >
+                      <Text style={{ fontSize: 14, color: star <= currentWeight ? colors.accent : colors.textTertiary }}>{String.fromCharCode(9733)}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
             </View>
           </View>
         ))}
@@ -244,7 +276,7 @@ export default function SettingsScreen({ refreshAll }) {
             <Ionicons name="download-outline" size={20} color={colors.primary} />
             <Text style={styles.dataBtnText}>导出备份</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.dataBtn} onPress={() => Alert.alert("导入", '请通过文件 App 导入 JSON 备份文件。')}>
+          <TouchableOpacity style={styles.dataBtn} onPress={handleImport}>
             <Ionicons name="folder-open-outline" size={20} color={colors.primary} />
             <Text style={styles.dataBtnText}>导入备份</Text>
           </TouchableOpacity>

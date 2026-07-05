@@ -24,3 +24,9 @@
 {"_e":"devserver:start","_t":1783092823169,"mode":"development","web":true,"baseUrl":"","asyncRoutes":false,"routerRoot":"../..\\..\\app","serverComponents":false,"serverActions":false,"serverRendering":false,"apiRoutes":false,"exporting":false}
 {"_e":"metro:config","_t":1783092823618,"serverRoot":"../..\\..","projectRoot":"../..\\..","exporting":false,"flags":{"autolinkingModuleResolution":false,"serverActions":false,"serverComponents":false,"reactCompiler":false,"optimizeGraph":false,"treeshaking":false,"logbox":false}}
 {"_e":"metro:server_log","_t":1783092823879,"level":"error","data":["An unexpected error occurred while installing the latest version of React Native DevTools. Using a fallback version instead. Details:\n\ndotslash error: 'fetch' command failed\ncaused by: failed to create directory `C:\\Users\\吴习凡\\AppData\\Local\\dotslash\\1f`\ncaused by: 当文件已存在时，无法创建该文件。 (os error 183)\n"]}
+{"_e":"root:init","_t":1783183227820,"format":"v0-jsonl","version":"56.1.16"}
+{"_e":"env:mode","_t":1783183227821,"nodeEnv":"production","babelEnv":"production","mode":"production"}
+{"_e":"env:load","_t":1783183227823,"mode":"production","files":[],"env":{}}
+{"_e":"devserver:start","_t":1783183228318,"mode":"production","web":true,"baseUrl":"","asyncRoutes":false,"routerRoot":"../..\\..\\app","serverComponents":false,"serverActions":false,"serverRendering":false,"apiRoutes":false,"exporting":false}
+{"_e":"metro:config","_t":1783183229062,"serverRoot":"../..\\..","projectRoot":"../..\\..","exporting":false,"flags":{"autolinkingModuleResolution":false,"serverActions":false,"serverComponents":false,"reactCompiler":false,"optimizeGraph":false,"treeshaking":false,"logbox":false}}
+{"_e":"metro:instantiate","_t":1783183238170,"atlas":false,"workers":17,"host":"::","port":8081}

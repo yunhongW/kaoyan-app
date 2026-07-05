@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useEffect } from "react";
 import { StatusBar } from "react-native";
 import { NavigationContainer } from "@react-navigation/native";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
@@ -9,7 +9,7 @@ import { colors, typography } from "./src/theme";
 
 import DailyScreen from "./src/screens/DailyScreen";
 import StatsScreen from "./src/screens/StatsScreen";
-import CalendarScreen from "./src/screens/CalendarScreen";
+import DashboardScreen from "./src/screens/DashboardScreen";
 import SettingsScreen from "./src/screens/SettingsScreen";
 
 const Tab = createBottomTabNavigator();
@@ -33,7 +33,6 @@ export default function App() {
     }
   }, []);
 
-  const handleSelectDate = useCallback((date) => setCurrentDate(date), []);
   const handleRefresh = useCallback(() => setRefreshKey((k) => k + 1), []);
 
   // 设置通知
@@ -44,9 +43,6 @@ export default function App() {
         if (status !== "granted") return;
         await Notifications.cancelAllScheduledNotificationsAsync();
         const nt = await store.getNotificationTime();
-        const now = new Date();
-        const trigger = new Date(now.getFullYear(), now.getMonth(), now.getDate(), nt.hour, nt.minute, 0);
-        if (trigger <= now) trigger.setDate(trigger.getDate() + 1);
         await Notifications.scheduleNotificationAsync({
           content: { title: "考研学习", body: "该学习啦！今天的计划完成了吗？" },
           trigger: { hour: nt.hour, minute: nt.minute, repeats: true },
@@ -65,7 +61,7 @@ export default function App() {
               let icon;
               if (route.name === "学习") icon = focused ? "book" : "book-outline";
               else if (route.name === "统计") icon = focused ? "stats-chart" : "stats-chart-outline";
-              else if (route.name === "日历") icon = focused ? "calendar" : "calendar-outline";
+              else if (route.name === "仪表盘") icon = focused ? "speedometer" : "speedometer-outline";
               else icon = focused ? "settings" : "settings-outline";
               return <Ionicons name={icon} size={size} color={color} />;
             },
@@ -87,9 +83,7 @@ export default function App() {
             {() => <DailyScreen key={refreshKey} date={currentDate} onDateChange={handleDateChange} />}
           </Tab.Screen>
           <Tab.Screen name="统计" component={StatsScreen} />
-          <Tab.Screen name="日历">
-            {() => <CalendarScreen onSelectDate={handleSelectDate} />}
-          </Tab.Screen>
+          <Tab.Screen name="仪表盘" component={DashboardScreen} />
           <Tab.Screen name="设置">
             {() => <SettingsScreen refreshAll={handleRefresh} />}
           </Tab.Screen>
