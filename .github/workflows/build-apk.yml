@@ -1,4 +1,4 @@
-name: Build Android APK
+name: Build Android APK (Local)
 
 on:
   workflow_dispatch:
@@ -8,7 +8,7 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
 
@@ -17,59 +17,29 @@ jobs:
           node-version: 20
           cache: npm
 
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: 'platforms;android-35 build-tools;35.0.0 platform-tools'
+
       - name: Install dependencies
         run: npm ci
 
-      - name: Setup Expo
-        uses: expo/expo-github-action@v8
-        with:
-          eas-version: latest
-          token: ${{ secrets.EXPO_TOKEN }}
+      - name: Generate Android project
+        run: npx expo prebuild --platform android --no-install
 
-      - name: Submit EAS build
-        id: submit
-        run: |
-          OUTPUT=$(npx eas-cli build --platform android --profile preview --non-interactive 2>&1)
-          echo "$OUTPUT"
-          # Extract build URL from output (e.g. https://expo.dev/accounts/.../builds/xxx)
-          BUILD_URL=$(echo "$OUTPUT" | grep -oE 'https://expo\.dev/accounts/[^ ]+/builds/[a-f0-9-]+' | head -1)
-          echo "build_url=$BUILD_URL" >> $GITHUB_OUTPUT
-        env:
-          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+      - name: Build APK
+        run: cd android && ./gradlew assembleRelease
 
-      - name: Wait for build completion
-        run: |
-          BUILD_URL="${{ steps.submit.outputs.build_url }}"
-          echo "Build URL: $BUILD_URL"
-          for i in $(seq 1 60); do
-            INFO=$(npx eas-cli build:view "$BUILD_URL" --json --non-interactive 2>/dev/null || echo "{}")
-            STATUS=$(echo "$INFO" | node -p "try{JSON.parse(require('fs').readFileSync('/dev/stdin','utf8')).status}catch(e){'UNKNOWN'}")
-            echo "[$i] Status: $STATUS"
-            if [ "$STATUS" = "FINISHED" ]; then
-              APK_URL=$(echo "$INFO" | node -p "try{JSON.parse(require('fs').readFileSync('/dev/stdin','utf8')).artifacts?.applicationArchiveUrl||''}catch(e){''}")
-              echo "Build finished!"
-              echo "APK_URL=$APK_URL" >> $GITHUB_ENV
-              exit 0
-            elif [ "$STATUS" = "ERRORED" ] || [ "$STATUS" = "CANCELLED" ]; then
-              echo "Build failed: $STATUS"
-              exit 1
-            fi
-            sleep 60
-          done
-          echo "Timeout waiting for build"
-          exit 1
-        env:
-          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
-
-      - name: Download APK
-        run: |
-          echo "Downloading: $APK_URL"
-          curl -L -o kaoyan-app.apk "$APK_URL"
-          ls -lh kaoyan-app.apk
-
-      - name: Upload artifact
+      - name: Find and upload APK
         uses: actions/upload-artifact@v4
         with:
           name: kaoyan-app-apk
-          path: "*.apk"
+          path: android/app/build/outputs/apk/release/*.apk
           retention-days: 30
