@@ -1,4 +1,4 @@
-﻿name: Build Android APK
+name: Build Android APK
 
 on:
   push:
@@ -8,8 +8,10 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-node@v4
         with:
           node-version: 20
@@ -18,32 +20,33 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Setup Expo and build APK
+      - name: Setup Expo
         uses: expo/expo-github-action@v8
         with:
           eas-version: latest
           token: ${{ secrets.EXPO_TOKEN }}
 
-      - name: Build APK with EAS (wait for completion)
-        run: eas build --platform android --profile preview --non-interactive
+      - name: Build APK (wait for cloud build)
+        run: eas build --platform android --profile preview --non-interactive --wait
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
 
-      - name: Download APK artifact
+      - name: Download APK
         run: |
-          BUILD_INFO=$(eas build:list --platform android --limit 1 --json 2>/dev/null || eas build:list --platform android --limit 1 --non-interactive --json 2>/dev/null)
-          echo "Build info: $BUILD_INFO"
-          APK_URL=$(echo "$BUILD_INFO" | npx --yes json artifacts.applicationArchiveUrl 2>/dev/null || echo "")
-          if [ -n "$APK_URL" ]; then
-            echo "Downloading APK from $APK_URL"
-            curl -L -o kaoyan-app.apk "$APK_URL"
-            echo "APK downloaded successfully"
+          URL=$(eas build:list --platform android --limit 1 --status FINISHED --json --non-interactive 2>/dev/null | node -p "JSON.parse(require('fs').readFileSync('/dev/stdin','utf8'))[0]?.artifacts?.applicationArchiveUrl||''")
+          echo "APK URL: $URL"
+          if [ -n "$URL" ]; then
+            curl -L -o kaoyan-app.apk "$URL"
+            ls -lh kaoyan-app.apk
           else
-            echo "Could not find APK URL in build info"
-            echo "$BUILD_INFO" | head -50
+            echo "ERROR: No APK URL found"
+            eas build:list --platform android --limit 1 --status FINISHED --non-interactive
+            exit 1
           fi
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
 
-      - name: Upload APK as artifact
+      - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: kaoyan-app-apk
